@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>庫存充足性查詢</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap');
+
+  /* ── Morandi pastel palette ──────────────────────────
+     Neutrals : #f2ede8 (bg) · #ede7df (surface alt) · #d6cec6 (border) · #a89f97 (muted)
+     Text      : #4a4540 (body) · #2e2924 (heading)
+     Sage      : #b5c4b1 (ok bg) · #7d9b78 (ok text)
+     Dusty amber: #d9c9a8 (warn bg) · #8b6f3a (warn text)
+     Blush rose : #d9b8b8 (danger bg) · #8b4848 (danger text)
+     Steel blue : #a8b8c8 (accent) · #6a8096 (accent dark)
+  ─────────────────────────────────────────────────── */
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: #f2ede8;
+    color: #4a4540;
+    min-height: 100vh;
+    padding: 32px 20px;
+    font-size: 14px;
+  }
+
+  .page-header { max-width: 860px; margin: 0 auto 24px; }
+  .page-header h1 { font-size: 1.3rem; font-weight: 600; color: #2e2924; margin-bottom: 4px; }
+  .page-header p  { color: #a89f97; font-size: 0.85rem; }
+
+  .card {
+    background: #faf7f4;
+    border: 1px solid #d6cec6;
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 860px;
+    margin: 0 auto 14px;
+  }
+
+  .card-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #a89f97;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 14px;
+  }
+
+  /* Upload */
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 540px) { .upload-row { grid-template-columns: 1fr; } }
+
+  .drop-zone {
+    border: 1.5px dashed #c4bab3;
+    border-radius: 8px;
+    padding: 18px 14px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    background: #f7f3ef;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop-zone:hover        { border-color: #a8b8c8; background: #eef2f6; }
+  .drop-zone.loaded       { border-color: #7d9b78; border-style: solid; background: #eef3ed; }
+  .drop-zone input        { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon              { font-size: 1.5rem; margin-bottom: 5px; }
+  .drop-title             { font-weight: 600; font-size: 0.88rem; color: #4a4540; margin-bottom: 2px; }
+  .drop-hint              { color: #a89f97; font-size: 0.78rem; }
+  .drop-loaded            { color: #7d9b78; font-size: 0.78rem; margin-top: 5px; font-weight: 500; display:none; }
+
+  /* Query */
+  .query-box { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 0.78rem; font-weight: 500; color: #4a4540; }
+
+  .field input[type=number] {
+    padding: 8px 12px;
+    border: 1px solid #d6cec6;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: #2e2924;
+    outline: none;
+    background: #faf7f4;
+    transition: border-color 0.15s;
+    width: 140px;
+  }
+  .field input:focus { border-color: #a8b8c8; box-shadow: 0 0 0 3px rgba(168,184,200,0.2); }
+  .field input[type=date] {
+    padding: 8px 12px;
+    border: 1px solid #d6cec6;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: #2e2924;
+    outline: none;
+    background: #faf7f4;
+    transition: border-color 0.15s;
+    width: 150px;
+  }
+  .field input[type=date]:disabled { background: #ede7df; color: #a89f97; cursor: not-allowed; }
+
+  /* Combobox */
+  .combo-wrap { position: relative; flex: 1; min-width: 220px; }
+  .combo-input {
+    width: 100%;
+    padding: 8px 32px 8px 12px;
+    border: 1px solid #d6cec6;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: #2e2924;
+    outline: none;
+    background: #faf7f4;
+    transition: border-color 0.15s;
+  }
+  .combo-input:focus { border-color: #a8b8c8; box-shadow: 0 0 0 3px rgba(168,184,200,0.2); }
+  .combo-input:disabled { background: #ede7df; color: #a89f97; cursor: not-allowed; }
+  .combo-arrow {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    color: #a89f97; pointer-events: none; font-size: 0.7rem;
+  }
+  .combo-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+    background: #faf7f4; border: 1px solid #d6cec6; border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(74,69,64,0.1);
+    max-height: 260px; overflow-y: auto; display: none;
+  }
+  .combo-dropdown.open { display: block; }
+  .combo-option {
+    padding: 9px 13px; cursor: pointer; font-size: 0.85rem; color: #4a4540;
+    border-bottom: 1px solid #ede7df; transition: background 0.1s;
+    line-height: 1.4;
+  }
+  .combo-option:last-child { border-bottom: none; }
+  .combo-option:hover, .combo-option.active { background: #eef2f6; color: #4a6070; }
+  .combo-option .opt-code { font-size: 0.75rem; color: #a89f97; margin-right: 6px; }
+  .combo-option .opt-spec { font-size: 0.75rem; color: #a89f97; }
+  .combo-empty { padding: 14px 13px; color: #a89f97; font-size: 0.85rem; text-align: center; }
+
+  .btn {
+    padding: 9px 22px;
+    border-radius: 7px;
+    border: none;
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+    align-self: flex-end;
+  }
+  .btn-primary           { background: #8fa8b8; color: #fff; }
+  .btn-primary:hover     { background: #6a8096; }
+  .btn-primary:disabled  { background: #c4d3dc; color: #fff; cursor: default; }
+  .btn-ghost             { background: #ede7df; color: #4a4540; border: 1px solid #d6cec6; }
+  .btn-ghost:hover       { background: #d6cec6; }
+
+  /* Result card */
+  .result-card { max-width: 860px; margin: 0 auto 14px; border-radius: 10px; border: 1px solid #d6cec6; overflow: hidden; display: none; }
+
+  .result-header { padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+  .result-header.ok     { background: #e8efe7; border-bottom: 1px solid #c4d6c1; }
+  .result-header.warn   { background: #f0e8d6; border-bottom: 1px solid #d9c9a8; }
+  .result-header.danger { background: #ecdcdc; border-bottom: 1px solid #d9b8b8; }
+
+  .result-icon    { font-size: 1.7rem; line-height: 1; }
+  .result-verdict { font-size: 1rem; font-weight: 600; }
+  .result-verdict.ok     { color: #5a7d56; }
+  .result-verdict.warn   { color: #7a5f30; }
+  .result-verdict.danger { color: #7a3a3a; }
+  .result-sub { color: #8a807a; font-size: 0.82rem; margin-top: 3px; }
+
+  .result-body { background: #faf7f4; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th {
+    background: #f2ede8;
+    padding: 9px 16px;
+    text-align: left;
+    font-weight: 500;
+    color: #a89f97;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #d6cec6;
+  }
+  th.r { text-align: right; }
+  td { padding: 11px 16px; border-bottom: 1px solid #ede7df; color: #4a4540; }
+  td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+
+  .val-pos  { color: #5a7d56; font-weight: 600; }
+  .val-neg  { color: #8b4848; font-weight: 600; }
+  .val-warn { color: #7a5f30; font-weight: 600; }
+
+  .cov-wrap { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .cov-bar  { width: 80px; height: 5px; background: #d6cec6; border-radius: 3px; overflow: hidden; }
+  .cov-fill { height: 100%; border-radius: 3px; }
+  .fill-ok     { background: #7d9b78; }
+  .fill-warn   { background: #c9a86c; }
+  .fill-danger { background: #b87878; }
+
+  /* History */
+  .history-card { max-width: 860px; margin: 0 auto 14px; display: none; }
+  .history-title { font-size: 0.72rem; font-weight: 600; color: #a89f97; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+  .history-list  { display: flex; flex-direction: column; gap: 6px; }
+
+  .history-item {
+    background: #faf7f4;
+    border: 1px solid #d6cec6;
+    border-radius: 8px;
+    padding: 11px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .history-name { font-weight: 500; font-size: 0.88rem; color: #2e2924; }
+  .history-meta { color: #a89f97; font-size: 0.78rem; margin-top: 2px; }
+
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 500; }
+  .tag-ok     { background: #d4e4d2; color: #4a7046; }
+  .tag-warn   { background: #e8d9bc; color: #7a5f30; }
+  .tag-danger { background: #e4cccc; color: #7a3a3a; }
+
+  .empty-hint { text-align: center; padding: 28px; color: #a89f97; font-size: 0.85rem; }
+
+  /* Work order breakdown */
+  .wo-section { border-top: 1px solid #ede7df; }
+  .wo-section-title {
+    padding: 10px 16px 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #a89f97;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: #f2ede8;
+  }
+  .wo-row { display: flex; align-items: center; gap: 0; border-bottom: 1px solid #ede7df; }
+  .wo-row:last-child { border-bottom: none; }
+  .wo-cell { padding: 9px 16px; font-size: 0.83rem; color: #4a4540; }
+  .wo-cell.date     { width: 110px; color: #a89f97; font-size: 0.8rem; }
+  .wo-cell.supplier { flex: 1; color: #a89f97; font-size: 0.8rem; }
+  .wo-cell.qty      { width: 100px; text-align: right; font-variant-numeric: tabular-nums; }
+  .wo-cell.flag     { width: 90px; text-align: right; }
+  .flag-conflict    { color: #8b4848; font-size: 0.75rem; font-weight: 500; }
+  .flag-safe        { color: #a89f97; font-size: 0.75rem; }
+
+  .divider-row td { padding: 6px 16px; background: #f2ede8; font-size: 0.72rem; font-weight: 600; color: #a89f97; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 1px solid #d6cec6; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="8" width="18" height="13" rx="2" fill="#d1d5db" stroke="#6b7280" stroke-width="1.5"/><path d="M3 11h18" stroke="#6b7280" stroke-width="1.5"/><path d="M9 8V5a3 3 0 016 0v3" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round"/><rect x="9" y="13" width="6" height="4" rx="1" fill="#9ca3af"/></svg>庫存充足性查詢</h1>
+  <p>上傳兩份 Excel，選擇品項並輸入訂單數量，即時判斷是否需要補貨</p>
+</div>
+
+<!-- Step 1 -->
+<div class="card">
+  <div class="card-title">Step 1 — 上傳檔案</div>
+  <div class="upload-row">
+    <div class="drop-zone" id="z1">
+      <input type="file" id="f1" accept=".xlsx,.xls">
+      <div class="drop-icon">
+        <svg width="38" height="38" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="20" width="40" height="24" rx="2" fill="#9ca3af"/>
+          <path d="M2 22 L24 8 L46 22" stroke="#4b5563" stroke-width="2.5" stroke-linecap="round" fill="#d1d5db"/>
+          <rect x="10" y="28" width="8" height="8" rx="1" fill="#4b5563"/>
+          <rect x="22" y="28" width="8" height="8" rx="1" fill="#4b5563"/>
+          <rect x="18" y="32" width="12" height="12" rx="1" fill="#6b7280"/>
+          <rect x="20" y="34" width="8" height="10" rx="1" fill="#9ca3af"/>
+        </svg>
+      </div>
+      <div class="drop-title">D+60 庫存表</div>
+      <div class="drop-hint">點擊或拖曳 Excel 至此</div>
+      <div class="drop-loaded" id="f1-ok">✓ 已載入</div>
+    </div>
+    <div class="drop-zone" id="z2">
+      <input type="file" id="f2" accept=".xlsx,.xls">
+      <div class="drop-icon">
+        <svg width="38" height="38" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="24" width="40" height="20" rx="1" fill="#9ca3af"/>
+          <rect x="6" y="18" width="14" height="26" rx="1" fill="#d1d5db"/>
+          <rect x="22" y="14" width="20" height="30" rx="1" fill="#6b7280"/>
+          <rect x="8" y="28" width="5" height="6" rx="0.5" fill="#4b5563"/>
+          <rect x="16" y="28" width="5" height="6" rx="0.5" fill="#4b5563"/>
+          <rect x="25" y="20" width="5" height="5" rx="0.5" fill="#4b5563"/>
+          <rect x="33" y="20" width="5" height="5" rx="0.5" fill="#4b5563"/>
+          <rect x="25" y="28" width="5" height="5" rx="0.5" fill="#4b5563"/>
+          <rect x="33" y="28" width="5" height="5" rx="0.5" fill="#4b5563"/>
+          <rect x="29" y="35" width="6" height="9" rx="0.5" fill="#4b5563"/>
+          <rect x="4" y="14" width="3" height="6" rx="0.5" fill="#6b7280"/>
+          <rect x="9" y="14" width="3" height="6" rx="0.5" fill="#6b7280"/>
+        </svg>
+      </div>
+      <div class="drop-title">生產工單進行狀況</div>
+      <div class="drop-hint">點擊或拖曳 Excel 至此</div>
+      <div class="drop-loaded" id="f2-ok">✓ 已載入</div>
+    </div>
+  </div>
+</div>
+
+<!-- Step 2 -->
+<div class="card">
+  <div class="card-title">Step 2 — 查詢品項</div>
+  <div class="query-box">
+    <div class="field" style="flex:1">
+      <label>選擇品項</label>
+      <div class="combo-wrap" id="combo-wrap">
+        <input type="text" class="combo-input" id="combo-input"
+               placeholder="— 請先上傳兩份 Excel —" disabled autocomplete="off">
+        <span class="combo-arrow">▼</span>
+        <div class="combo-dropdown" id="combo-dropdown"></div>
+      </div>
+    </div>
+    <div class="field">
+      <label>訂單需求數量</label>
+      <input type="number" id="order-qty" min="0" placeholder="輸入數量" disabled>
+    </div>
+    <div class="field">
+      <label>訂單交貨日</label>
+      <input type="date" id="order-date" disabled style="width:150px">
+    </div>
+    <button class="btn btn-primary" id="btn-check" disabled>查詢</button>
+    <button class="btn btn-ghost" id="btn-clear">清除紀錄</button>
+  </div>
+</div>
+
+<!-- Result -->
+<div class="result-card" id="result-card">
+  <div class="result-header" id="rh">
+    <div class="result-icon" id="ri"></div>
+    <div>
+      <div class="result-verdict" id="rv"></div>
+      <div class="result-sub" id="rs"></div>
+    </div>
+  </div>
+  <div class="result-body">
+    <table>
+      <thead>
+        <tr>
+          <th>項目</th>
+          <th class="r">數量</th>
+          <th class="r">備註</th>
+        </tr>
+      </thead>
+      <tbody id="rtb"></tbody>
+    </table>
+    <div id="wo-detail"></div>
+  </div>
+</div>
+
+<!-- History -->
+<div class="history-card" id="hc">
+  <div class="history-title">本次查詢紀錄</div>
+  <div class="history-list" id="hl"></div>
+</div>
+
+<div class="empty-hint" id="hint">上傳完成後，從下拉選單選擇品項並輸入訂單需求量，點「查詢」即可判斷是否需要補貨。</div>
+
+<script>
+let stockMap = {}, orderMap = {}, allItems = [], log = [];
+
+function readXlsx(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => { try { res(XLSX.read(e.target.result, { type: 'array' })); } catch(e) { rej(e); } };
+    r.readAsArrayBuffer(file);
+  });
+}
+
+function parseStock(wb) {
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:'' });
+  const map = {};
+  for (const row of rows) {
+    const code = String(row[0]||'').trim();
+    if (!/^[A-Z]\d{5}$/.test(code)) continue;
+    map[code] = { name: String(row[1]||'').trim(), spec: String(row[2]||'').trim(), qty: pn(row[3]) };
+  }
+  return map;
+}
+
+// Parse orders: group raw rows by work-order ID (col0 like "2026/04/23 -1"),
+// then per work-order take the MIN unproduced value across its rows (= latest progress).
+// orderMap[productCode] = { name, workOrders: [ { woId, deliveryDate, deliveryRaw, supplier, unproduced } ] }
+function parseOrders(wb) {
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:'', raw:false });
+  const map = {};
+
+  // We collect rows between 合計 blocks.
+  // Each block: pending = { woId → { deliveryDate, deliveryRaw, supplier, unproducedValues:[] } }
+  let pendingByWo = {}; // woId → { deliveryDate, deliveryRaw, supplier, unproducedValues }
+  let currentWoId = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const c0  = String(row[0]||'').trim();
+
+    // Individual production order row: "2026/04/23 -1" or "2026/05/13 -1" etc.
+    if (/^\d{4}\/\d{2}\/\d{2}/.test(c0)) {
+      // Extract work order ID = the date-number in col0
+      const woId       = c0;
+      const supplier   = String(row[2]||'').trim();
+      const deliveryRaw = String(row[3]||'').trim();
+      const deliveryDate = parseDate(deliveryRaw);
+      const unproduced  = pn(row[8]);
+
+      if (!pendingByWo[woId]) {
+        pendingByWo[woId] = { woId, deliveryDate, deliveryRaw: deliveryRaw.trim(), supplier, unproducedValues: [] };
+      }
+      // Collect all unproduced values for this work order
+      pendingByWo[woId].unproducedValues.push(unproduced);
+      continue;
+    }
+
+    // 合計 row → assign collected work orders to this product code
+    const m = c0.match(/^([A-Z]\d{5})\s*\/\s*(.+?)\s*合計$/);
+    if (m) {
+      const code = m[1], name = m[2].trim();
+      if (!map[code]) map[code] = { name, workOrders: [] };
+
+      for (const wo of Object.values(pendingByWo)) {
+        // Take MIN of unproducedValues as the "remaining to produce" for this work order
+        const minUnproduced = wo.unproducedValues.length
+          ? Math.min(...wo.unproducedValues)
+          : 0;
+        if (minUnproduced > 0) {
+          map[code].workOrders.push({
+            woId:        wo.woId,
+            deliveryDate: wo.deliveryDate,
+            deliveryRaw:  wo.deliveryRaw,
+            supplier:     wo.supplier,
+            unproduced:   minUnproduced
+          });
+        }
+      }
+      pendingByWo = {};
+      continue;
+    }
+  }
+
+  return map;
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  const clean = s.replace(/\s/g, '').replace(/\//g, '-');
+  const d = new Date(clean);
+  return isNaN(d) ? null : d;
+}
+
+function pn(v) {
+  const s = String(v||'').replace(/,/g,'').trim();
+  if (!s || s==='-') return 0;
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function setupDrop(zId, fId, cb) {
+  const zone = document.getElementById(zId), inp = document.getElementById(fId);
+  inp.addEventListener('change', () => inp.files[0] && cb(inp.files[0]));
+  zone.addEventListener('dragover', e => { e.preventDefault(); });
+  zone.addEventListener('drop', e => { e.preventDefault(); e.dataTransfer.files[0] && cb(e.dataTransfer.files[0]); });
+}
+
+setupDrop('z1','f1', async f => {
+  stockMap = parseStock(await readXlsx(f));
+  document.getElementById('z1').classList.add('loaded');
+  const el = document.getElementById('f1-ok');
+  el.style.display = ''; el.textContent = `✓ ${f.name}`;
+  tryBuild();
+});
+
+setupDrop('z2','f2', async f => {
+  orderMap = parseOrders(await readXlsx(f));
+  document.getElementById('z2').classList.add('loaded');
+  const el = document.getElementById('f2-ok');
+  el.style.display = ''; el.textContent = `✓ ${f.name}`;
+  tryBuild();
+});
+
+function tryBuild() {
+  if (!Object.keys(stockMap).length || !Object.keys(orderMap).length) return;
+  const codes = [...new Set([...Object.keys(stockMap),...Object.keys(orderMap)])].sort();
+  allItems = codes.map(code => ({
+    code,
+    name: (stockMap[code]||{}).name || (orderMap[code]||{}).name || code,
+    spec: (stockMap[code]||{}).spec || ''
+  }));
+  const inp = document.getElementById('combo-input');
+  inp.disabled = false;
+  inp.placeholder = '輸入品項名稱或編碼搜尋…';
+  document.getElementById('order-qty').disabled = false;
+  document.getElementById('order-date').disabled = false;
+  document.getElementById('btn-check').disabled = false;
+  document.getElementById('hint').style.display = 'none';
+  renderDropdown('');
+}
+
+// ── Combobox logic ─────────────────────────
+let selectedCode = '';
+let activeIdx    = -1;
+
+function renderDropdown(q) {
+  const dd = document.getElementById('combo-dropdown');
+  const filtered = q
+    ? allItems.filter(it =>
+        it.name.includes(q) || it.code.toLowerCase().includes(q.toLowerCase()))
+    : allItems;
+
+  if (!filtered.length) {
+    dd.innerHTML = '<div class="combo-empty">找不到符合的品項</div>';
+  } else {
+    dd.innerHTML = filtered.slice(0, 80).map((it, i) =>
+      `<div class="combo-option" data-code="${it.code}" data-idx="${i}">
+        <span class="opt-code">${esc(it.code)}</span>${esc(it.name)}
+        ${it.spec ? `<span class="opt-spec">（${esc(it.spec)}）</span>` : ''}
+      </div>`
+    ).join('');
+    dd.querySelectorAll('.combo-option').forEach(el => {
+      el.addEventListener('mousedown', e => {
+        e.preventDefault();
+        selectItem(el.dataset.code);
+      });
+    });
+  }
+  activeIdx = -1;
+}
+
+function selectItem(code) {
+  const it = allItems.find(i => i.code === code);
+  if (!it) return;
+  selectedCode = code;
+  document.getElementById('combo-input').value = `${it.code}　${it.name}${it.spec ? '　('+it.spec+')' : ''}`;
+  closeDropdown();
+  document.getElementById('order-qty').focus();
+}
+
+function openDropdown() {
+  document.getElementById('combo-dropdown').classList.add('open');
+}
+
+function closeDropdown() {
+  document.getElementById('combo-dropdown').classList.remove('open');
+  activeIdx = -1;
+  // Restore displayed name if user clicked away without selecting a new item
+  if (selectedCode && !comboInput.value.trim()) {
+    const it = allItems.find(i => i.code === selectedCode);
+    if (it) comboInput.value = `${it.code}　${it.name}${it.spec ? '　('+it.spec+')' : ''}`;
+  }
+}
+
+const comboInput = document.getElementById('combo-input');
+
+comboInput.addEventListener('focus', () => {
+  if (!comboInput.disabled) {
+    comboInput.value = '';
+    selectedCode = '';
+    renderDropdown('');
+    openDropdown();
+  }
+});
+
+comboInput.addEventListener('input', () => {
+  selectedCode = '';
+  renderDropdown(comboInput.value);
+  openDropdown();
+});
+
+comboInput.addEventListener('keydown', e => {
+  const dd      = document.getElementById('combo-dropdown');
+  const options = [...dd.querySelectorAll('.combo-option')];
+  if (!options.length) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    activeIdx = Math.min(activeIdx + 1, options.length - 1);
+    options.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
+    options[activeIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    activeIdx = Math.max(activeIdx - 1, 0);
+    options.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
+    options[activeIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    if (activeIdx >= 0 && options[activeIdx]) {
+      selectItem(options[activeIdx].dataset.code);
+    } else {
+      doCheck();
+    }
+  } else if (e.key === 'Escape') {
+    closeDropdown();
+  }
+});
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('combo-wrap').contains(e.target)) closeDropdown();
+});
+
+document.getElementById('btn-check').addEventListener('click', doCheck);
+document.getElementById('order-qty').addEventListener('keydown', e => { if (e.key==='Enter') doCheck(); });
+
+function doCheck() {
+  const code    = selectedCode;
+  const rawQ    = document.getElementById('order-qty').value;
+  const rawDate = document.getElementById('order-date').value;
+
+  if (!code)                            { alert('請選擇品項'); return; }
+  if (rawQ==='' || isNaN(Number(rawQ))) { alert('請輸入有效的訂單數量'); return; }
+  if (!rawDate)                         { alert('請輸入訂單交貨日期'); return; }
+
+  const orderQty  = Number(rawQ);
+  const orderDate = new Date(rawDate);
+  orderDate.setHours(0,0,0,0);
+
+  const s        = stockMap[code] || {};
+  const o        = orderMap[code] || {};
+  const d60Stock = s.qty ?? 0;
+  const name     = s.name || o.name || code;
+
+  // Work orders sorted by delivery date
+  const allWO = ((o.workOrders || []).slice()).sort((a, b) => {
+    if (!a.deliveryDate) return 1;
+    if (!b.deliveryDate) return -1;
+    return a.deliveryDate - b.deliveryDate;
+  });
+
+  // In-time WO: delivery date <= orderDate → will arrive before we need to ship
+  const inTimeWO  = allWO.filter(wo => wo.deliveryDate && wo.deliveryDate <= orderDate);
+  // Late WO: delivery date > orderDate → arrives too late, can't count on it
+  const lateWO    = allWO.filter(wo => !wo.deliveryDate || wo.deliveryDate > orderDate);
+
+  const inTimeSupply = inTimeWO.reduce((s, wo) => s + wo.unproduced, 0);
+  const lateSupply   = lateWO.reduce((s, wo) => s + wo.unproduced, 0);
+
+  // Effective stock = current stock + in-time work order supply
+  const effectiveStock = d60Stock + inTimeSupply;
+
+  // Gap (positive = short, negative = surplus)
+  const gap = orderQty - effectiveStock;
+
+  const status = gap <= 0 ? 'ok' : gap <= orderQty * 0.3 ? 'warn' : 'danger';
+
+  // Render header
+  const rcard = document.getElementById('result-card');
+  rcard.style.display = 'block';
+  document.getElementById('rh').className = 'result-header ' + status;
+  document.getElementById('rv').className = 'result-verdict ' + status;
+
+  const iconsSvg = {
+    ok: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="10" fill="#c8d8c5" stroke="#7d9b78" stroke-width="1.5"/>
+      <path d="M7 12.5l3.5 3.5 6.5-7" stroke="#4a7046" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`,
+    warn: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3L2 20h20L12 3z" fill="#e8d9bc" stroke="#c9a86c" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M12 10v4" stroke="#7a5f30" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="12" cy="17" r="1" fill="#7a5f30"/>
+    </svg>`,
+    danger: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="10" fill="#e4cccc" stroke="#b87878" stroke-width="1.5"/>
+      <path d="M8 8l8 8M16 8l-8 8" stroke="#7a3a3a" stroke-width="2" stroke-linecap="round"/>
+    </svg>`
+  };
+  const verdicts = {
+    ok:     '庫存充足，可如期交貨',
+    warn:   '庫存偏緊，建議確認補貨進度',
+    danger: '庫存不足，需要補貨'
+  };
+  const subs = {
+    ok:     `${name} — 交貨 ${fmtDate(orderDate)}，尚有 ${fmt(-gap)} 件餘裕`,
+    warn:   `${name} — 交貨 ${fmtDate(orderDate)}，缺口 ${fmt(gap)} 件`,
+    danger: `${name} — 交貨 ${fmtDate(orderDate)}，缺口 ${fmt(gap)} 件，須額外補貨`
+  };
+
+  document.getElementById('ri').innerHTML = iconsSvg[status];
+  document.getElementById('rv').textContent = verdicts[status];
+  document.getElementById('rs').textContent = subs[status];
+
+  // Summary table
+  const summaryRows = [
+    ['D+60 現有庫存',           d60Stock,       '目前帳面庫存',                                     ''],
+    ['預計補貨量（準時工單）',   inTimeSupply,   `${inTimeWO.length} 張工單可在交貨日前到貨`,         inTimeSupply > 0 ? 'val-pos' : ''],
+    ['可用庫存合計',             effectiveStock, '現有庫存＋準時補貨',                               ''],
+    ['本次訂單需求',             orderQty,       `交貨日 ${fmtDate(orderDate)}`,                     ''],
+    ['庫存缺口',                 -gap,           gap <= 0 ? `尚餘 ${fmt(-gap)} 件` : `需再補 ${fmt(gap)} 件`, gap <= 0 ? 'val-pos' : 'val-neg'],
+  ];
+
+  document.getElementById('rtb').innerHTML = summaryRows.map(([label, val, note, cls]) =>
+    `<tr><td>${label}</td><td class="r ${cls}">${fmt(val)}</td><td class="r" style="color:#9ca3af;font-size:0.8rem">${note}</td></tr>`
+  ).join('');
+
+  // Work order breakdown
+  let woHtml = '';
+
+  if (inTimeWO.length > 0) {
+    woHtml += `<div class="wo-section">
+      <div class="wo-section-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10" fill="#c8d8c5" stroke="#7d9b78" stroke-width="1.5"/><path d="M7 12.5l3.5 3.5 6.5-7" stroke="#4a7046" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        準時補貨工單（交貨日 ≤ ${fmtDate(orderDate)}，列入可用庫存）
+      </div>`;
+    inTimeWO.forEach(wo => {
+      woHtml += `<div class="wo-row" style="background:#eef3ed">
+        <div class="wo-cell date">${wo.deliveryRaw || '—'}</div>
+        <div class="wo-cell supplier">${esc(wo.supplier)}</div>
+        <div class="wo-cell qty val-pos">+${fmt(wo.unproduced)}</div>
+        <div class="wo-cell flag"><span style="color:#5a7d56;font-size:0.75rem;font-weight:500">計入補貨</span></div>
+      </div>`;
+    });
+    woHtml += `</div>`;
+  }
+
+  if (lateWO.length > 0) {
+    woHtml += `<div class="wo-section">
+      <div class="wo-section-title" style="color:#7a5f30">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10" fill="#e8d9bc" stroke="#c9a86c" stroke-width="1.5"/><path d="M12 7v5l3 3" stroke="#7a5f30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        來不及的工單（交貨日晚於訂單，無法計入）
+      </div>`;
+    lateWO.forEach(wo => {
+      woHtml += `<div class="wo-row" style="background:#f5ede0">
+        <div class="wo-cell date">${wo.deliveryRaw || '—'}</div>
+        <div class="wo-cell supplier">${esc(wo.supplier)}</div>
+        <div class="wo-cell qty val-warn">${fmt(wo.unproduced)}</div>
+        <div class="wo-cell flag"><span class="flag-conflict">來不及</span></div>
+      </div>`;
+    });
+    woHtml += `</div>`;
+  }
+
+  if (!allWO.length) {
+    woHtml = `<div class="wo-section"><div style="padding:12px 16px;color:#9ca3af;font-size:0.83rem">此品項目前無進行中工單</div></div>`;
+  }
+
+  document.getElementById('wo-detail').innerHTML = woHtml;
+
+  // History
+  log.unshift({ code, name, orderQty, orderDate, d60Stock, inTimeSupply, effectiveStock, gap, status });
+  if (log.length > 20) log.pop();
+  renderHistory();
+  rcard.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function renderHistory() {
+  const hc = document.getElementById('hc');
+  if (!log.length) { hc.style.display='none'; return; }
+  hc.style.display = 'block';
+  document.getElementById('hl').innerHTML = log.map(h => {
+    const tagText = { ok:'充足', warn:'偏緊', danger:'不足' }[h.status];
+    const surplusOrGap = h.gap <= 0 ? `餘 +${fmt(-h.gap)}` : `缺 ${fmt(h.gap)}`;
+    return `<div class="history-item">
+      <div>
+        <div class="history-name">${esc(h.name)} <span style="color:#9ca3af;font-weight:400;font-size:0.78rem">${h.code}</span></div>
+        <div class="history-meta">訂單 ${fmt(h.orderQty)}　交貨 ${fmtDate(h.orderDate)}　庫存 ${fmt(h.d60Stock)}　補貨 +${fmt(h.inTimeSupply)}　${surplusOrGap}</div>
+      </div>
+      <span class="tag tag-${h.status}">${tagText}</span>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  log = [];
+  renderHistory();
+  document.getElementById('result-card').style.display = 'none';
+});
+
+function fmt(n) { return Number(n).toLocaleString('zh-TW'); }
+function fmtPct(r) { return r===Infinity ? '100%' : Math.round(r*100)+'%'; }
+function fmtDate(d) {
+  if (!d) return '—';
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}/${m}/${day}`;
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
