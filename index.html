@@ -692,7 +692,7 @@ function doCheck() {
     ['預計補貨量（準時工單）',   inTimeSupply,   `${inTimeWO.length} 張工單可在交貨日前到貨`,         inTimeSupply > 0 ? 'val-pos' : ''],
     ['可用庫存合計',             effectiveStock, '現有庫存＋準時補貨',                               ''],
     ['本次訂單需求',             orderQty,       `交貨日 ${fmtDate(orderDate)}`,                     ''],
-    ['庫存缺口',                 -gap,           gap <= 0 ? `尚餘 ${fmt(-gap)} 件` : `需再補 ${fmt(gap)} 件`, gap <= 0 ? 'val-pos' : 'val-neg'],
+    ['庫存狀況',                 -gap,           gap <= 0 ? `尚餘 ${fmt(-gap)} 件` : `需再補 ${fmt(gap)} 件`, gap <= 0 ? 'val-pos' : 'val-neg'],
   ];
 
   document.getElementById('rtb').innerHTML = summaryRows.map(([label, val, note, cls]) =>
