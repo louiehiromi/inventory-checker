@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>庫存流動與需求確認</title>
+<title>庫存充足性查詢</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -71,7 +71,7 @@
   .drop-icon              { font-size: 1.5rem; margin-bottom: 5px; }
   .drop-title             { font-weight: 600; font-size: 0.88rem; color: #4a4540; margin-bottom: 2px; }
   .drop-hint              { color: #a89f97; font-size: 0.78rem; }
-  .drop-loaded            { color: #7d9b78; font-size: 0.78rem; margin-top: 5px; font-weight: 500; display:none; }
+  .drop-loaded { color: #7d9b78; font-size: 0.78rem; margin-top: 6px; font-weight: 500; display: none; line-height: 1.6; }
 
   /* Query */
   .query-box { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
@@ -368,6 +368,13 @@
 <div class="empty-hint" id="hint">上傳完成後，從下拉選單選擇品項並輸入訂單需求量，點「查詢」即可判斷是否需要補貨。</div>
 
 <script>
+function fmtNow() {
+  const n = new Date();
+  const y = n.getFullYear(), mo = String(n.getMonth()+1).padStart(2,'0'), d = String(n.getDate()).padStart(2,'0');
+  const h = String(n.getHours()).padStart(2,'0'), mi = String(n.getMinutes()).padStart(2,'0');
+  return `${y}/${mo}/${d} ${h}:${mi}`;
+}
+
 let stockMap = {}, orderMap = {}, allItems = [], log = [];
 
 function readXlsx(file) {
@@ -476,7 +483,8 @@ setupDrop('z1','f1', async f => {
   stockMap = parseStock(await readXlsx(f));
   document.getElementById('z1').classList.add('loaded');
   const el = document.getElementById('f1-ok');
-  el.style.display = ''; el.textContent = `✓ ${f.name}`;
+  el.style.display = 'block';
+  el.innerHTML = `✓ ${f.name}<br><span style="font-size:0.72rem;opacity:0.75">上傳於 ${fmtNow()}</span>`;
   tryBuild();
 });
 
@@ -484,7 +492,8 @@ setupDrop('z2','f2', async f => {
   orderMap = parseOrders(await readXlsx(f));
   document.getElementById('z2').classList.add('loaded');
   const el = document.getElementById('f2-ok');
-  el.style.display = ''; el.textContent = `✓ ${f.name}`;
+  el.style.display = 'block';
+  el.innerHTML = `✓ ${f.name}<br><span style="font-size:0.72rem;opacity:0.75">上傳於 ${fmtNow()}</span>`;
   tryBuild();
 });
 
@@ -692,7 +701,7 @@ function doCheck() {
     ['預計補貨量（準時工單）',   inTimeSupply,   `${inTimeWO.length} 張工單可在交貨日前到貨`,         inTimeSupply > 0 ? 'val-pos' : ''],
     ['可用庫存合計',             effectiveStock, '現有庫存＋準時補貨',                               ''],
     ['本次訂單需求',             orderQty,       `交貨日 ${fmtDate(orderDate)}`,                     ''],
-    ['庫存狀況',                 -gap,           gap <= 0 ? `尚餘 ${fmt(-gap)} 件` : `需再補 ${fmt(gap)} 件`, gap <= 0 ? 'val-pos' : 'val-neg'],
+    ['庫存缺口',                 -gap,           gap <= 0 ? `尚餘 ${fmt(-gap)} 件` : `需再補 ${fmt(gap)} 件`, gap <= 0 ? 'val-pos' : 'val-neg'],
   ];
 
   document.getElementById('rtb').innerHTML = summaryRows.map(([label, val, note, cls]) =>
