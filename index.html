@@ -505,10 +505,10 @@ function showLoaded(zId, elId, name, ts) {
 }
 
 // ── Restore from localStorage on page load ──
-(function restoreFromStorage() {
+document.addEventListener('DOMContentLoaded', function restoreFromStorage() {
   try {
-    const sm = localStorage.getItem('stockMap');
-    const om = localStorage.getItem('orderMap');
+    const sm    = localStorage.getItem('stockMap');
+    const om    = localStorage.getItem('orderMap');
     const smeta = JSON.parse(localStorage.getItem('stockMeta') || 'null');
     const ometa = JSON.parse(localStorage.getItem('orderMeta') || 'null');
     if (sm && smeta) {
@@ -521,13 +521,12 @@ function showLoaded(zId, elId, name, ts) {
     }
     if (sm && om) tryBuild();
   } catch(e) {
-    // corrupted storage — clear and start fresh
     localStorage.removeItem('stockMap');
     localStorage.removeItem('orderMap');
     localStorage.removeItem('stockMeta');
     localStorage.removeItem('orderMeta');
   }
-})();
+});
 
 function tryBuild() {
   if (!Object.keys(stockMap).length || !Object.keys(orderMap).length) return;
