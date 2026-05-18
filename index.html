@@ -481,21 +481,53 @@ function setupDrop(zId, fId, cb) {
 
 setupDrop('z1','f1', async f => {
   stockMap = parseStock(await readXlsx(f));
-  document.getElementById('z1').classList.add('loaded');
-  const el = document.getElementById('f1-ok');
-  el.style.display = 'block';
-  el.innerHTML = `✓ ${f.name}<br><span style="font-size:0.72rem;opacity:0.75">上傳於 ${fmtNow()}</span>`;
+  const ts = fmtNow();
+  localStorage.setItem('stockMap', JSON.stringify(stockMap));
+  localStorage.setItem('stockMeta', JSON.stringify({ name: f.name, ts }));
+  showLoaded('z1', 'f1-ok', f.name, ts);
   tryBuild();
 });
 
 setupDrop('z2','f2', async f => {
   orderMap = parseOrders(await readXlsx(f));
-  document.getElementById('z2').classList.add('loaded');
-  const el = document.getElementById('f2-ok');
-  el.style.display = 'block';
-  el.innerHTML = `✓ ${f.name}<br><span style="font-size:0.72rem;opacity:0.75">上傳於 ${fmtNow()}</span>`;
+  const ts = fmtNow();
+  localStorage.setItem('orderMap', JSON.stringify(orderMap));
+  localStorage.setItem('orderMeta', JSON.stringify({ name: f.name, ts }));
+  showLoaded('z2', 'f2-ok', f.name, ts);
   tryBuild();
 });
+
+function showLoaded(zId, elId, name, ts) {
+  document.getElementById(zId).classList.add('loaded');
+  const el = document.getElementById(elId);
+  el.style.display = 'block';
+  el.innerHTML = `✓ ${name}<br><span style="font-size:0.72rem;opacity:0.75">上傳於 ${ts}</span>`;
+}
+
+// ── Restore from localStorage on page load ──
+(function restoreFromStorage() {
+  try {
+    const sm = localStorage.getItem('stockMap');
+    const om = localStorage.getItem('orderMap');
+    const smeta = JSON.parse(localStorage.getItem('stockMeta') || 'null');
+    const ometa = JSON.parse(localStorage.getItem('orderMeta') || 'null');
+    if (sm && smeta) {
+      stockMap = JSON.parse(sm);
+      showLoaded('z1', 'f1-ok', smeta.name, smeta.ts);
+    }
+    if (om && ometa) {
+      orderMap = JSON.parse(om);
+      showLoaded('z2', 'f2-ok', ometa.name, ometa.ts);
+    }
+    if (sm && om) tryBuild();
+  } catch(e) {
+    // corrupted storage — clear and start fresh
+    localStorage.removeItem('stockMap');
+    localStorage.removeItem('orderMap');
+    localStorage.removeItem('stockMeta');
+    localStorage.removeItem('orderMeta');
+  }
+})();
 
 function tryBuild() {
   if (!Object.keys(stockMap).length || !Object.keys(orderMap).length) return;
