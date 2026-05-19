@@ -581,6 +581,7 @@ function selectItem(code) {
   if (!it) return;
   selectedCode = code;
   document.getElementById('combo-input').value = `${it.code}　${it.name}${it.spec ? '　('+it.spec+')' : ''}`;
+  document.getElementById('order-qty').value = '';
   closeDropdown();
   document.getElementById('order-qty').focus();
 }
